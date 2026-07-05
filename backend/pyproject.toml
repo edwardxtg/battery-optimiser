@@ -1,0 +1,26 @@
+[project]
+name = "battery-optimiser-backend"
+version = "0.1.0"
+description = "Stacked battery dispatch optimiser (arbitrage + grid-event export)"
+requires-python = ">=3.10"
+dependencies = [
+    "numpy>=1.26",
+    "pandas>=2.1",
+    "linopy>=0.3",
+    "highspy>=1.7",
+    "fastapi>=0.110",
+    "uvicorn>=0.29",
+    "pydantic>=2.6",
+    "requests>=2.31",
+    "slowapi>=0.1.9",
+]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["app*"]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
