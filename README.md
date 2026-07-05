@@ -1,5 +1,7 @@
 # battery-optimiser
 
+**Live demo: [battery-optimiser.vercel.app](https://battery-optimiser.vercel.app/)**
+
 Optimise a home battery to **arbitrage wholesale electricity prices** — buy when power is
 cheap, sell when it's dear — within the battery's physical limits. Enter your battery,
 press Optimise, and see the dispatch schedule and projected earnings against live GB prices.
