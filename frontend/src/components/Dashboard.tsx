@@ -65,6 +65,11 @@ export default function Dashboard() {
 
   const runOptimise = useCallback(async () => {
     if (!series) return;
+    if (battery.reserve_kwh > battery.initial_soc_kwh) {
+      setError("Reserve can't be higher than the current state of charge (kWh).");
+      setResult(null);
+      return;
+    }
     setLoading(true);
     setError(null);
     try {

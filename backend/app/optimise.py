@@ -60,6 +60,9 @@ def optimise_dispatch(battery: Battery, prices: np.ndarray) -> DispatchResult:
     n = len(prices)
     if n == 0:
         raise ValueError("prices must be non-empty")
+    if battery.reserve_kwh > battery.initial_soc_kwh:
+        # Otherwise the first period is infeasible: it can't reach the reserve floor in one step.
+        raise ValueError("reserve_kwh cannot exceed initial_soc_kwh")
 
     dt = SETTLEMENT_PERIOD_HOURS
     periods = range(n)

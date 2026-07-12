@@ -43,6 +43,13 @@ def test_profitable_and_buys_low_sells_high(prices):
     assert np.where(r.discharge_kw > 0.05)[0].max() >= 36
 
 
+def test_reserve_above_soc_raises(prices):
+    # Starting below the reserve floor is infeasible; the optimiser should refuse it cleanly.
+    b = Battery(capacity_kwh=13.5, power_kw=5.0, initial_soc_kwh=2.0, reserve_kwh=5.0)
+    with pytest.raises(ValueError):
+        optimise_dispatch(b, prices)
+
+
 def test_flat_prices_no_trade():
     # With no price spread, arbitrage can't profit, so it shouldn't cycle.
     b = Battery(capacity_kwh=13.5, power_kw=5.0, initial_soc_kwh=2.0)

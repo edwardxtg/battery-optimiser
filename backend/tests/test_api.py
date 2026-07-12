@@ -38,3 +38,11 @@ def test_oversized_payload_rejected():
     body = {"prices": [50.0] * 5000}
     r = client.post("/optimise", json=body)
     assert r.status_code == 422
+
+
+def test_reserve_above_soc_rejected():
+    # Reserve above current SoC is inconsistent input; expect a clean 422, not a 500.
+    body = {"battery": {"capacity_kwh": 13.5, "power_kw": 5.0,
+                        "initial_soc_kwh": 2.0, "reserve_kwh": 5.0}}
+    r = client.post("/optimise", json=body)
+    assert r.status_code == 422
