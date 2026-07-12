@@ -18,8 +18,8 @@ from dataclasses import dataclass
 import numpy as np
 import linopy
 
-DT_HOURS = 0.5          # half-hourly settlement periods
-DAYS_PER_MONTH = 30.4   # for extrapolating a daily result to a monthly figure
+SETTLEMENT_PERIOD_HOURS = 0.5  # each GB settlement period is half an hour
+DAYS_PER_MONTH = 30.4          # for extrapolating a daily result to a monthly figure
 
 
 @dataclass
@@ -44,7 +44,7 @@ class DispatchResult:
 
     @property
     def projected_monthly(self) -> float:
-        days = len(self.prices) * DT_HOURS / 24.0
+        days = len(self.prices) * SETTLEMENT_PERIOD_HOURS / 24.0
         return self.net_profit / max(days, 1e-9) * DAYS_PER_MONTH
 
     def summary(self) -> str:
@@ -61,7 +61,7 @@ def optimise_dispatch(battery: Battery, prices: np.ndarray) -> DispatchResult:
     if n == 0:
         raise ValueError("prices must be non-empty")
 
-    dt, eta = DT_HOURS, battery.efficiency
+    dt = SETTLEMENT_PERIOD_HOURS
     periods = range(n)
 
     m = linopy.Model()
@@ -72,9 +72,9 @@ def optimise_dispatch(battery: Battery, prices: np.ndarray) -> DispatchResult:
 
     # State-of-charge balance: energy in (after round-trip losses) minus energy out.
     for t in periods:
-        prev = soc.loc[t - 1] if t > 0 else battery.initial_soc_kwh
+        soc_prev = soc.loc[t - 1] if t > 0 else battery.initial_soc_kwh
         m.add_constraints(
-            soc.loc[t] - prev - eta * charge.loc[t] * dt + discharge.loc[t] * dt == 0,
+            soc.loc[t] - soc_prev - battery.efficiency * charge.loc[t] * dt + discharge.loc[t] * dt == 0,
             name=f"soc_balance_{t}",
         )
     # Don't end the day with less energy than we started (no selling off the reserve).
