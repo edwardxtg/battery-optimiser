@@ -13,6 +13,7 @@ dependencies = [
     "pydantic>=2.6",
     "requests>=2.31",
     "slowapi>=0.1.9",
+    "duckdb>=1.0",
 ]
 
 [build-system]
