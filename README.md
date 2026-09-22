@@ -52,12 +52,57 @@ Wholesale arbitrage is only part of a GB battery's revenue — ancillary service
 rest — so the £/MW/year shown here is a floor on the stack and a ceiling on the wholesale
 layer, not a forecast of what an asset earns.
 
+## Backtest & benchmark
+
+The optimiser is only worth anything if it can be measured, so the backend also carries a
+small **price store and backtest**:
+
+```bash
+make ingest      # pull 30 days of Elexon prices into backend/prices.duckdb
+make backtest    # solve every stored day, benchmark against the available spread
+```
+
+- **`app/ingest.py`** walks Elexon's market-index endpoint back in 7-day windows (its
+  per-request limit) and upserts half-hourly prices into a single-file
+  [DuckDB](https://duckdb.org) store, keyed by settlement date + period. Re-running only
+  adds what's new.
+- **`app/sql/tbx.sql`** computes **TB1 / TB2 / TB4** per day — the sum of the X dearest
+  hours minus the X cheapest, on hourly-average prices. TB2 is the standard proxy for what
+  a 2-hour battery can earn per MW from one cycle a day.
+- **`app/backtest.py`** runs the LP on each complete day (perfect foresight, state of
+  charge reset daily) and writes revenue, throughput and cycles to a `runs` table.
+- **`app/sql/benchmark.sql`** joins the two and reports the **capture rate**:
+  realised £/MW/day ÷ TB<sub>D</sub> for a D-hour battery.
+
+Result for the default 10 MW / 20 MWh, 88 % RTE battery over 24 Aug – 21 Sep 2026
+(29 complete days):
+
+| Metric | Value |
+|---|---|
+| Mean TB2 available | £232 /MW/day |
+| Mean realised (perfect foresight) | £192 /MW/day ≈ **£70k /MW/yr** |
+| **Capture rate vs TB2** | **76 %** |
+| Cycles per day | 1.47 |
+
+Two things the day-by-day table makes visible:
+
+- **Capture rate falls on flat, expensive days.** On 28 Aug prices sat between £97 and
+  £169; buying at ~£132 and selling at ~£166 nets only ~£16/MWh after the 12 % round-trip
+  loss, because efficiency costs a share of the *price level*, not of the spread. TB2
+  ignores losses, so capture drops to 23 %.
+- **Capture rate exceeds 100 % on double-peak days.** TB2 assumes one cycle; the optimiser
+  is free to cycle more, and on 12 Sep it did 1.44 cycles for 135 % of TB2. A daily cycle
+  cap would make the comparison exact and is the obvious next constraint.
+
+The SQL is deliberately plain — CTEs, window functions and a join — and lives in `.sql`
+files rather than being built in Python, so each query can be read and run on its own.
+
 ## Run locally
 
 ```bash
 # Backend (:8080)
 make backend-install
-make backend-test        # unit tests for the optimiser + API
+make backend-test        # unit tests for the optimiser, API and SQL store
 make backend-dev
 
 # Frontend (:3000) — in another terminal
@@ -115,6 +160,7 @@ explainable. The layers a production revenue model adds, and how each would slot
 | Cycle cost (degradation as £/MWh) | ✅ | Objective term |
 | SoC floor / footroom | ✅ | Bound on `soc` |
 | Cycles and £/MW/year reporting | ✅ | `DispatchResult` |
+| Backtest and capture rate vs TBX spreads | ✅ | `backtest.py` + `sql/` |
 | Daily cycling cap | ✗ | One constraint: `Σ discharge·Δt ≤ N·C` |
 | Ancillary services (frequency response, reserve) | ✗ | Per-service commitment variables, headroom/footroom on `soc`, revenue term — co-optimised in the same LP |
 | Imperfect foresight | ✗ | Re-solve each hour with true near-term prices and a smoothed view beyond; compare with perfect foresight to get a capture rate |

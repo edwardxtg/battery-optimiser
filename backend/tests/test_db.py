@@ -54,3 +54,21 @@ def test_tbx_spreads(con):
     assert row["tb1"] == pytest.approx(110 - 10)              # dearest hour − cheapest hour
     assert row["tb2"] == pytest.approx(2 * 110 - 2 * 10)      # two of each
     assert row["tb4"] == pytest.approx((2 * 110 + 2 * 50) - (2 * 10 + 2 * 50))
+
+
+def test_backtest_and_benchmark(con):
+    from app.backtest import benchmark, run_backtest
+    from app.optimise import Battery
+
+    # A 2-hour lossless battery on the fixture day: £10 for two hours, £110 for two hours.
+    # A token cycle cost keeps the LP from wash-cycling (see MODEL.md) without moving profit.
+    b = Battery(capacity_mwh=20.0, power_mw=10.0, efficiency=1.0, cycle_cost_per_mwh=0.01)
+    assert run_backtest(con, b) == 1                 # only the complete day is run
+    bench = benchmark(con, b)
+    assert len(bench) == 1
+    row = bench.iloc[0]
+    assert row["tb_d"] == pytest.approx(200.0)       # TB2 = 2×110 − 2×10
+    # Lossless, the LP captures the whole spread: 20 MWh × £100 / 10 MW.
+    assert row["gbp_per_mw"] == pytest.approx(200.0, rel=1e-2)
+    assert row["capture_rate"] == pytest.approx(1.0, rel=1e-2)
+    assert row["cycles"] == pytest.approx(1.0, abs=0.01)
