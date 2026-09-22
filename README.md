@@ -2,16 +2,17 @@
 
 **Live demo: [battery-optimiser.vercel.app](https://battery-optimiser.vercel.app/)**
 
-Optimise a home battery to **arbitrage wholesale electricity prices** — buy when power is
-cheap, sell when it's dear — within the battery's physical limits. Enter your battery,
-press Optimise, and see the dispatch schedule and projected earnings against live GB prices.
+Optimise a grid-scale battery (BESS) to **arbitrage wholesale electricity prices** — buy
+when power is cheap, sell when it's dear — within the battery's physical limits. Enter a
+battery, press Optimise, and see the dispatch schedule, cycles and £/MW/year against live
+GB prices.
 
-Grid-service revenue — an aggregator (a virtual power plant) paying the battery to export
-during grid-stress events — is one layer that could sit *on top* of this arbitrage base
-(see [Possible extensions](#possible-extensions)).
+This is the wholesale-energy core of a **BESS revenue model**. A full model stacks
+ancillary services, cycling limits and degradation on top of it — see
+[How this relates to a full BESS revenue model](#how-this-relates-to-a-full-bess-revenue-model).
 
-> A deliberately simple, public-data demonstration of the optimise → serve loop behind a
-> demand-side flexibility platform.
+> A deliberately simple, public-data demonstration of the model → API → UI loop behind a
+> battery revenue product.
 
 ## Architecture
 
@@ -28,9 +29,8 @@ Data flow:
 1. The **frontend** fetches live GB prices directly in the browser on page load
    (Elexon BMRS), falling back to a backend proxy if CORS blocks the direct call.
 2. On **Optimise**, it POSTs the battery spec + prices to the backend.
-3. The **backend** derives grid-stress events, solves the dispatch LP, and returns the
-   schedule + earnings breakdown.
-4. The frontend renders price/charging, state-of-charge, and the earnings.
+3. The **backend** solves the dispatch LP and returns the schedule, cycles and revenue.
+4. The frontend renders price/dispatch, state-of-charge, and the revenue metrics.
 
 Keeping data-fetching in the browser means page load never waits on a Cloud Run cold
 start — the backend is only hit when you optimise.
@@ -38,18 +38,19 @@ start — the backend is only hit when you optimise.
 ## The optimisation
 
 A linear program (linopy + HiGHS) over the 48 half-hourly periods of a day. It maximises
-**arbitrage profit** — export revenue minus import cost — net of a small per-kWh
-**degradation cost**, subject to power, capacity, round-trip efficiency, a homeowner
-**reserve floor**, and a **no-net-drain** condition. The full formulation, with the reasoning
-behind each constraint, is in **[backend/MODEL.md](backend/MODEL.md)**.
+**arbitrage profit** — export revenue minus import cost — net of a per-MWh **cycle cost**,
+subject to power, capacity, round-trip efficiency, a **state-of-charge floor**, and a
+**no-net-drain** condition. It reports **cycles** (energy discharged ÷ capacity) and
+**£/MW/year**, the units BESS revenues are quoted in. The full formulation, with the
+reasoning behind each constraint, is in **[backend/MODEL.md](backend/MODEL.md)**.
 
 **v1 assumes perfect foresight** (prices are treated as known). That's a deliberate
 upper-bound benchmark: the forecaster is a future upstream component, and because the
 optimiser takes prices as an input, it won't change when the forecast is added.
 
-Wholesale arbitrage alone is marginal — GB spreads are tens of £/MWh — so a home battery
-earns little from it. That's exactly why grid services and VPPs exist, and why they'd be a
-natural extension rather than the starting point.
+Wholesale arbitrage is only part of a GB battery's revenue — ancillary services are the
+rest — so the £/MW/year shown here is a floor on the stack and a ceiling on the wholesale
+layer, not a forecast of what an asset earns.
 
 ## Run locally
 
@@ -103,17 +104,30 @@ In place:
 
 A determined caller can still hit the endpoint directly; that's expected and harmless here.
 
+## How this relates to a full BESS revenue model
+
+What's here is the wholesale-energy layer, kept small on purpose so every line is
+explainable. The layers a production revenue model adds, and how each would slot in:
+
+| Layer | Status here | How it would slot in |
+|---|---|---|
+| Wholesale arbitrage | ✅ | The LP in `optimise.py` |
+| Cycle cost (degradation as £/MWh) | ✅ | Objective term |
+| SoC floor / footroom | ✅ | Bound on `soc` |
+| Cycles and £/MW/year reporting | ✅ | `DispatchResult` |
+| Daily cycling cap | ✗ | One constraint: `Σ discharge·Δt ≤ N·C` |
+| Ancillary services (frequency response, reserve) | ✗ | Per-service commitment variables, headroom/footroom on `soc`, revenue term — co-optimised in the same LP |
+| Imperfect foresight | ✗ | Re-solve each hour with true near-term prices and a smoothed view beyond; compare with perfect foresight to get a capture rate |
+| Degradation over time | ✗ | Reduce capacity as cumulative cycles accrue |
+| Annual cycling budget | ✗ | Post-process: drop the least profitable sub-cycles until under budget |
+| Multi-day state of charge | ✗ | Carry `soc[-1]` into the next day's `initial_soc` |
+
 ## Possible extensions
 
-Directions this could be taken — illustrative, not commitments:
-
-- **Grid-service revenue (the VPP layer).** Payment for exporting during grid-stress events
-  on top of the arbitrage base — the layer where an aggregator / VPP adds value.
 - **Price forecasting.** Replace perfect foresight with a forecaster (statistical/ML, or a
-  PyPSA fundamentals model); the price input is designed to be swapped.
+  fundamentals model); the price input is designed to be swapped.
 - **Receding-horizon re-optimisation** each settlement period, as a live dispatcher runs.
-- **Fleet endpoint** aggregating many batteries into total dispatchable MW (the VPP view).
-- **Household load** so the battery also optimises self-consumption, not just grid trades.
+- **Other markets.** The LP is market-agnostic; only the price feed is GB-specific.
 
 ## Licence
 

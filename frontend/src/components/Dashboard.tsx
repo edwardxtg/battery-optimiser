@@ -11,16 +11,16 @@ import {
 import { BATTERY_PRESETS } from "@/lib/batteries";
 
 const DEFAULT_BATTERY: BatterySpec = {
-  capacity_kwh: 13.5,
-  power_kw: 5.0,
-  efficiency: 0.9,
-  initial_soc_kwh: 2.0,
-  reserve_kwh: 1.0,
-  degradation_cost_per_kwh: 0.005,
+  capacity_mwh: 20.0,
+  power_mw: 10.0,
+  efficiency: 0.88,
+  initial_soc_mwh: 2.0,
+  soc_min_mwh: 1.0,
+  cycle_cost_per_mwh: 5.0,
 };
 
 function money(x: number): string {
-  return "£" + x.toFixed(2);
+  return "£" + Math.round(x).toLocaleString("en-GB");
 }
 // Fallback label when no timestamp is available (index-based).
 function label(i: number): string {
@@ -65,8 +65,8 @@ export default function Dashboard() {
 
   const runOptimise = useCallback(async () => {
     if (!series) return;
-    if (battery.reserve_kwh > battery.initial_soc_kwh) {
-      setError("Reserve can't be higher than the current state of charge (kWh).");
+    if (battery.soc_min_mwh > battery.initial_soc_mwh) {
+      setError("SoC floor can't be higher than the current state of charge (MWh).");
       setResult(null);
       return;
     }
@@ -87,7 +87,7 @@ export default function Dashboard() {
   const applyPreset = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const p = BATTERY_PRESETS.find((x) => x.name === e.target.value)!;
     setPreset(p.name);
-    setBattery((b) => ({ ...b, capacity_kwh: p.capacity_kwh, power_kw: p.power_kw }));
+    setBattery((b) => ({ ...b, capacity_mwh: p.capacity_mwh, power_mw: p.power_mw }));
   };
 
   const chartData = useMemo(() => {
@@ -99,9 +99,9 @@ export default function Dashboard() {
         t: iso ? fmtTime(iso) : label(i),
         full: iso ? fmtFull(iso) + " UTC" : label(i),
         price: Math.round(p * 10) / 10,
-        charge: Math.round(result.charge_kw[i] * 100) / 100,
-        discharge: Math.round(result.discharge_kw[i] * 100) / 100,
-        soc: Math.round(result.soc_kwh[i] * 100) / 100,
+        charge: Math.round(result.charge_mw[i] * 100) / 100,
+        discharge: Math.round(result.discharge_mw[i] * 100) / 100,
+        soc: Math.round(result.soc_mwh[i] * 100) / 100,
       };
     });
   }, [result, series]);
@@ -118,12 +118,13 @@ export default function Dashboard() {
   return (
     <>
       <div className="header">
-        <h1>Battery Optimiser</h1>
+        <h1>BESS Dispatch Optimiser</h1>
         <p>
-          Enter your home battery and optimise a day of dispatch to arbitrage wholesale
+          Enter a grid-scale battery and optimise a day of dispatch to arbitrage GB wholesale
           electricity prices — buy low, sell high — within the battery&rsquo;s physical
-          limits. v1 uses live GB prices with perfect foresight. Grid-service revenue via an
-          aggregator (a virtual power plant) is one way this base could be extended.
+          limits. v1 uses live prices with perfect foresight, so the result is the
+          upper bound on wholesale-only revenue. Ancillary services and cycling limits are
+          the next layers of a full revenue model.
         </p>
       </div>
 
@@ -139,24 +140,24 @@ export default function Dashboard() {
               </select>
             </label>
             <label className="field">
-              Capacity (kWh)
-              <input type="number" step="0.5" value={battery.capacity_kwh} onChange={set("capacity_kwh")} />
+              Capacity (MWh)
+              <input type="number" step="1" value={battery.capacity_mwh} onChange={set("capacity_mwh")} />
             </label>
             <label className="field">
-              Power (kW)
-              <input type="number" step="0.5" value={battery.power_kw} onChange={set("power_kw")} />
+              Power (MW)
+              <input type="number" step="1" value={battery.power_mw} onChange={set("power_mw")} />
             </label>
             <label className="field">
               Efficiency
               <input type="number" step="0.01" min="0.5" max="1" value={battery.efficiency} onChange={set("efficiency")} />
             </label>
             <label className="field">
-              Current SoC (kWh)
-              <input type="number" step="0.5" value={battery.initial_soc_kwh} onChange={set("initial_soc_kwh")} />
+              Current SoC (MWh)
+              <input type="number" step="1" value={battery.initial_soc_mwh} onChange={set("initial_soc_mwh")} />
             </label>
             <label className="field">
-              Reserve (kWh)
-              <input type="number" step="0.5" value={battery.reserve_kwh} onChange={set("reserve_kwh")} />
+              SoC floor (MWh)
+              <input type="number" step="1" value={battery.soc_min_mwh} onChange={set("soc_min_mwh")} />
             </label>
             <button className="primary" onClick={runOptimise} disabled={!series || loading}>
               {loading ? "Optimising…" : "Optimise"}
@@ -183,8 +184,12 @@ export default function Dashboard() {
                 <div className="v green">{money(result.net_profit)}</div>
               </div>
               <div className="card metric">
-                <div className="k">Projected monthly</div>
-                <div className="v">{money(result.projected_monthly)}<span style={{ fontSize: 13 }}>/mo</span></div>
+                <div className="k">Annualised</div>
+                <div className="v">{money(result.gbp_per_mw_year)}<span style={{ fontSize: 13 }}>/MW/yr</span></div>
+              </div>
+              <div className="card metric">
+                <div className="k">Cycles (this day)</div>
+                <div className="v">{result.cycles.toFixed(2)}</div>
               </div>
               <div className="card metric">
                 <div className="k">Data source</div>
@@ -203,11 +208,11 @@ export default function Dashboard() {
                   <CartesianGrid strokeDasharray="3 3" stroke="#eee" />
                   <XAxis dataKey="t" interval={5} fontSize={11} />
                   <YAxis yAxisId="l" fontSize={11} label={{ value: "£/MWh", angle: -90, position: "insideLeft", fontSize: 11 }} />
-                  <YAxis yAxisId="r" orientation="right" fontSize={11} label={{ value: "kW", angle: 90, position: "insideRight", fontSize: 11 }} />
+                  <YAxis yAxisId="r" orientation="right" fontSize={11} label={{ value: "MW", angle: 90, position: "insideRight", fontSize: 11 }} />
                   <Tooltip labelFormatter={tooltipLabel} />
                   <Legend />
-                  <Bar yAxisId="r" dataKey="charge" name="Charge (kW)" fill="#1f4e79" opacity={0.75} />
-                  <Bar yAxisId="r" dataKey="discharge" name="Discharge (kW)" fill="#2e7d32" opacity={0.75} />
+                  <Bar yAxisId="r" dataKey="charge" name="Charge (MW)" fill="#1f4e79" opacity={0.75} />
+                  <Bar yAxisId="r" dataKey="discharge" name="Discharge (MW)" fill="#2e7d32" opacity={0.75} />
                   <Line yAxisId="l" type="monotone" dataKey="price" name="Price (£/MWh)" stroke="#e67e22" strokeWidth={2} dot={false} />
                 </ComposedChart>
               </ResponsiveContainer>
@@ -219,17 +224,18 @@ export default function Dashboard() {
                 <AreaChart data={chartData}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#eee" />
                   <XAxis dataKey="t" interval={5} fontSize={11} />
-                  <YAxis fontSize={11} label={{ value: "kWh", angle: -90, position: "insideLeft", fontSize: 11 }} />
+                  <YAxis fontSize={11} label={{ value: "MWh", angle: -90, position: "insideLeft", fontSize: 11 }} />
                   <Tooltip labelFormatter={tooltipLabel} />
-                  <Area type="monotone" dataKey="soc" name="State of charge (kWh)" stroke="#2e7d32" fill="#2e7d32" fillOpacity={0.12} />
+                  <Area type="monotone" dataKey="soc" name="State of charge (MWh)" stroke="#2e7d32" fill="#2e7d32" fillOpacity={0.12} />
                 </AreaChart>
               </ResponsiveContainer>
             </div>
 
             <p className="note">
-              Perfect-foresight arbitrage on a single day, extrapolated to a month. Wholesale
-              arbitrage alone is marginal — which is precisely why grid services and VPPs
-              exist. Treat the monthly figure as an idealised ceiling.
+              Perfect-foresight arbitrage on a single day, annualised per MW. Real assets
+              capture less than this (they don&rsquo;t know tomorrow&rsquo;s prices) and earn
+              more than this (they stack ancillary services on top). Treat the figure as the
+              wholesale-only ceiling for this day&rsquo;s spread.
             </p>
           </>
         )}
@@ -237,7 +243,7 @@ export default function Dashboard() {
 
       <div className="footer">
         Prices via Elexon BMRS (direct, backend proxy fallback); optimisation with linopy on
-        Cloud Run. A public-data demonstration of price-aware home-battery dispatch.
+        Cloud Run. A public-data demonstration of a BESS dispatch model.
       </div>
     </>
   );

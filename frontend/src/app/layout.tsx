@@ -4,7 +4,7 @@ import "./globals.css";
 export const metadata: Metadata = {
   title: "Battery Optimiser",
   description:
-    "Optimise a home battery for stacked wholesale-arbitrage and grid-event earnings.",
+    "Optimise a grid-scale battery (BESS) for wholesale energy arbitrage against live GB prices.",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

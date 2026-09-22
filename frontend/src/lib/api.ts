@@ -11,12 +11,12 @@ const ELEXON_URL =
   "https://data.elexon.co.uk/bmrs/api/v1/balancing/pricing/market-index";
 
 export interface BatterySpec {
-  capacity_kwh: number;
-  power_kw: number;
+  capacity_mwh: number;
+  power_mw: number;
   efficiency: number;
-  initial_soc_kwh: number;
-  reserve_kwh: number;
-  degradation_cost_per_kwh: number;
+  initial_soc_mwh: number;
+  soc_min_mwh: number;
+  cycle_cost_per_mwh: number;
 }
 
 export interface PriceSeries {
@@ -27,12 +27,13 @@ export interface PriceSeries {
 
 export interface OptimiseResult {
   source: string;
-  charge_kw: number[];
-  discharge_kw: number[];
-  soc_kwh: number[];
+  charge_mw: number[];
+  discharge_mw: number[];
+  soc_mwh: number[];
   prices: number[];
   net_profit: number;
-  projected_monthly: number;
+  cycles: number;
+  gbp_per_mw_year: number;
 }
 
 function isoHour(d: Date): string {
