@@ -23,14 +23,16 @@ def test_parse_elexon_mid():
 
 def test_optimise_with_client_prices():
     prices = ([20.0] * 12 + [100.0] * 24 + [250.0] * 4 + [100.0] * 8)
-    body = {"battery": {"capacity_kwh": 13.5, "power_kw": 5.0, "initial_soc_kwh": 2.0},
+    body = {"battery": {"capacity_mwh": 20.0, "power_mw": 10.0, "initial_soc_mwh": 2.0},
             "prices": prices}
     r = client.post("/optimise", json=body)
     assert r.status_code == 200
     d = r.json()
     assert d["source"] == "client"
-    assert len(d["charge_kw"]) == len(prices)
+    assert len(d["charge_mw"]) == len(prices)
     assert d["net_profit"] > 0
+    assert d["cycles"] > 0
+    assert d["gbp_per_mw_year"] > 0
 
 
 def test_oversized_payload_rejected():
@@ -40,9 +42,9 @@ def test_oversized_payload_rejected():
     assert r.status_code == 422
 
 
-def test_reserve_above_soc_rejected():
-    # Reserve above current SoC is inconsistent input; expect a clean 422, not a 500.
-    body = {"battery": {"capacity_kwh": 13.5, "power_kw": 5.0,
-                        "initial_soc_kwh": 2.0, "reserve_kwh": 5.0}}
+def test_floor_above_soc_rejected():
+    # A SoC floor above the current SoC is inconsistent input; expect a clean 422, not a 500.
+    body = {"battery": {"capacity_mwh": 20.0, "power_mw": 10.0,
+                        "initial_soc_mwh": 2.0, "soc_min_mwh": 5.0}}
     r = client.post("/optimise", json=body)
     assert r.status_code == 422
