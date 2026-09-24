@@ -7,11 +7,20 @@
 --
 -- Parameters: $power_mw, $capacity_mwh, $efficiency select the battery; $hours = D.
 
-WITH hourly AS (
+WITH complete_days AS (
+    -- Days with all 48 half-hours. Excludes days with missing (zero-volume) periods and
+    -- clock-change days (46 or 50 periods).
+    SELECT settlement_date
+    FROM prices
+    GROUP BY settlement_date
+    HAVING count(*) = 48
+),
+hourly AS (
     SELECT settlement_date,
            (settlement_period - 1) // 2 AS hour,
            avg(price)                  AS price
     FROM prices
+    WHERE settlement_date IN (SELECT settlement_date FROM complete_days)
     GROUP BY settlement_date, hour
 ),
 ranked AS (
@@ -27,7 +36,6 @@ spread AS (
          - sum(price) FILTER (WHERE rank_low  <= $hours) AS tb_d
     FROM ranked
     GROUP BY settlement_date
-    HAVING count(*) = 24
 )
 SELECT r.settlement_date,
        round(s.tb_d, 2)                          AS tb_d,

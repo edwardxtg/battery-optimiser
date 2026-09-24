@@ -45,6 +45,9 @@ def _parse_elexon_mid(payload: dict) -> pd.Series:
         price = r.get("price")
         if ts is None or price is None:
             continue
+        if r.get("volume") == 0:
+            # Elexon reports periods with no trades as price 0 — that's missing data, not £0.
+            continue
         recs.append((pd.to_datetime(ts, utc=True), float(price)))
     if not recs:
         raise ValueError("No usable rows in Elexon MID response")

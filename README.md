@@ -63,9 +63,11 @@ make backtest    # solve every stored day, benchmark against the available sprea
 ```
 
 - **`app/ingest.py`** walks Elexon's market-index endpoint back in 7-day windows (its
-  per-request limit) and upserts half-hourly prices into a single-file
-  [DuckDB](https://duckdb.org) store, keyed by settlement date + period. Re-running only
-  adds what's new.
+  per-request limit) and stores half-hourly prices in a single-file
+  [DuckDB](https://duckdb.org) store, keyed by settlement date + period. Each window
+  replaces what's stored for that time range, so re-running is safe. Periods with **zero
+  traded volume** — which Elexon reports as a price of £0 — are treated as missing, and days
+  with any missing half-hour are left out of the spreads and the backtest.
 - **`app/sql/tbx.sql`** computes **TB1 / TB2 / TB4** per day — the sum of the X dearest
   hours minus the X cheapest, on hourly-average prices. TB2 is the standard proxy for what
   a 2-hour battery can earn per MW from one cycle a day.
@@ -74,15 +76,15 @@ make backtest    # solve every stored day, benchmark against the available sprea
 - **`app/sql/benchmark.sql`** joins the two and reports the **capture rate**:
   realised £/MW/day ÷ TB<sub>D</sub> for a D-hour battery.
 
-Result for the default 10 MW / 20 MWh, 88 % RTE battery over 24 Aug – 21 Sep 2026
-(29 complete days):
+Result for the default 10 MW / 20 MWh, 88 % RTE battery over 24 Aug – 23 Sep 2026
+(29 complete days; 11 and 12 Sep excluded for zero-volume periods):
 
 | Metric | Value |
 |---|---|
-| Mean TB2 available | £232 /MW/day |
-| Mean realised (perfect foresight) | £192 /MW/day ≈ **£70k /MW/yr** |
-| **Capture rate vs TB2** | **76 %** |
-| Cycles per day | 1.47 |
+| Mean TB2 available | £223 /MW/day |
+| Mean realised (perfect foresight) | £182 /MW/day ≈ **£66k /MW/yr** |
+| **Capture rate vs TB2** | **75 %** |
+| Cycles per day | 1.48 |
 
 Two things the day-by-day table makes visible:
 
@@ -90,9 +92,14 @@ Two things the day-by-day table makes visible:
   £169; buying at ~£132 and selling at ~£166 nets only ~£16/MWh after the 12 % round-trip
   loss, because efficiency costs a share of the *price level*, not of the spread. TB2
   ignores losses, so capture drops to 23 %.
-- **Capture rate exceeds 100 % on double-peak days.** TB2 assumes one cycle; the optimiser
-  is free to cycle more, and on 12 Sep it did 1.44 cycles for 135 % of TB2. A daily cycle
-  cap would make the comparison exact and is the obvious next constraint.
+- **Capture rate can exceed 100 % on double-peak days.** TB2 assumes one cycle; the
+  optimiser is free to cycle more, and on 1 Sep it did 2 full cycles for 101 % of TB2. A
+  daily cycle cap would make the comparison exact and is the obvious next constraint.
+
+An earlier version of this table reported 135 % capture on 12 Sep. That was a data bug,
+not a strategy: four untraded periods across 11–12 Sep, reported as £0, let the optimiser
+"buy" free power.
+The fix, and tests for it, are in the ingest and SQL above.
 
 The SQL is deliberately plain — CTEs, window functions and a join — and lives in `.sql`
 files rather than being built in Python, so each query can be read and run on its own.

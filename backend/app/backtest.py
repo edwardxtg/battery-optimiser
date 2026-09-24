@@ -29,7 +29,7 @@ def complete_days(con) -> pd.DataFrame:
 
 
 def run_backtest(con, battery: Battery) -> int:
-    """Solve each day and upsert into `runs`. Returns the number of days run."""
+    """Solve each complete day and store results in `runs`. Returns the number of days run."""
     days = complete_days(con)
     rows = []
     for day, prices in zip(days["settlement_date"], days["prices"]):
@@ -44,9 +44,15 @@ def run_backtest(con, battery: Battery) -> int:
             "cycles": r.cycles,
             "run_at": datetime.now(timezone.utc),
         })
+    # Replace this battery's results wholesale, so days that are no longer complete
+    # (e.g. after a data fix) don't linger with stale numbers.
+    con.execute(
+        "DELETE FROM runs WHERE power_mw = ? AND capacity_mwh = ? AND efficiency = ?",
+        [battery.power_mw, battery.capacity_mwh, battery.efficiency],
+    )
     if rows:
         df = pd.DataFrame(rows)
-        con.execute("INSERT OR REPLACE INTO runs SELECT * FROM df")
+        con.execute("INSERT INTO runs SELECT * FROM df")
     return len(rows)
 
 

@@ -1,13 +1,22 @@
 -- TBX spreads per settlement day: the sum of the X dearest hours minus the sum of the
 -- X cheapest. TB2 is the standard proxy for what a 2-hour battery can earn per MW from one
 -- cycle a day; TB4 for a 4-hour battery. Computed on hourly-average prices, as the
--- industry convention is, and only for complete days (clock-change days are skipped).
+-- industry convention is, and only for days with all 48 half-hours present.
 
-WITH hourly AS (
+WITH complete_days AS (
+    -- Days with all 48 half-hours. Excludes days with missing (zero-volume) periods and
+    -- clock-change days (46 or 50 periods).
+    SELECT settlement_date
+    FROM prices
+    GROUP BY settlement_date
+    HAVING count(*) = 48
+),
+hourly AS (
     SELECT settlement_date,
            (settlement_period - 1) // 2 AS hour,
            avg(price)                  AS price
     FROM prices
+    WHERE settlement_date IN (SELECT settlement_date FROM complete_days)
     GROUP BY settlement_date, hour
 ),
 ranked AS (
@@ -24,5 +33,4 @@ SELECT settlement_date,
        round(sum(price) FILTER (WHERE rank_high <= 4) - sum(price) FILTER (WHERE rank_low <= 4), 2) AS tb4
 FROM ranked
 GROUP BY settlement_date
-HAVING count(*) = 24
 ORDER BY settlement_date;

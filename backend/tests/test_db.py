@@ -30,7 +30,10 @@ def con():
     full = day_rows(date(2026, 1, 1), prices)
     # Partial day (only 2 periods) — must be excluded from spreads.
     partial = day_rows(date(2026, 1, 2), [5.0, 500.0])
-    df = pd.concat([full, partial])
+    # A day missing one half-hour (a zero-volume period dropped at ingest). It still has all
+    # 24 hours, so only a 48-period rule excludes it. The £1 prices would dominate its spread.
+    gappy = day_rows(date(2026, 1, 3), [1.0] * 4 + [50.0] * 40 + [200.0] * 4).drop(index=10)
+    df = pd.concat([full, partial, gappy])
     con.execute("INSERT INTO prices SELECT * FROM df")
     return con
 
@@ -42,13 +45,13 @@ def test_upsert_is_idempotent(con):
     after, price = con.execute(
         "SELECT count(*), max(price) FROM prices WHERE settlement_date = DATE '2026-01-01'"
     ).fetchone()
-    assert before == 50 and after == 48
+    assert before == 97 and after == 48
     assert price == 99.0
 
 
 def test_tbx_spreads(con):
     tbx = query(con, "tbx")
-    # Only the complete day survives the HAVING count(*) = 24 filter.
+    # Only the complete day survives: the partial and the one-gap day are excluded.
     assert list(pd.to_datetime(tbx["settlement_date"]).dt.date) == [date(2026, 1, 1)]
     row = tbx.iloc[0]
     assert row["tb1"] == pytest.approx(110 - 10)              # dearest hour − cheapest hour
@@ -72,3 +75,15 @@ def test_backtest_and_benchmark(con):
     assert row["gbp_per_mw"] == pytest.approx(200.0, rel=1e-2)
     assert row["capture_rate"] == pytest.approx(1.0, rel=1e-2)
     assert row["cycles"] == pytest.approx(1.0, abs=0.01)
+
+
+def test_backtest_clears_stale_runs(con):
+    from app.backtest import run_backtest
+    from app.optimise import Battery
+
+    b = Battery(capacity_mwh=20.0, power_mw=10.0)
+    # A stale result for a day that is no longer complete must not survive a rerun.
+    con.execute("INSERT INTO runs VALUES (DATE '2026-01-03', 10.0, 20.0, 0.88, 999.0, 20.0, 1.0, now())")
+    run_backtest(con, b)
+    days = [d for (d,) in con.execute("SELECT settlement_date FROM runs ORDER BY 1").fetchall()]
+    assert days == [date(2026, 1, 1)]

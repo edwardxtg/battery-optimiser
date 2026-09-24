@@ -21,6 +21,16 @@ def test_parse_elexon_mid():
     assert list(s.values) == [61.5, 58.0]
 
 
+def test_parse_elexon_mid_skips_zero_volume():
+    # Elexon reports untraded periods as price 0 with volume 0: missing, not £0.
+    payload = {"data": [
+        {"startTime": "2024-06-01T00:00:00Z", "price": 61.5, "volume": 400.0},
+        {"startTime": "2024-06-01T00:30:00Z", "price": 0.0, "volume": 0.0},
+    ]}
+    s = _parse_elexon_mid(payload)
+    assert list(s.values) == [61.5]
+
+
 def test_optimise_with_client_prices():
     prices = ([20.0] * 12 + [100.0] * 24 + [250.0] * 4 + [100.0] * 8)
     body = {"battery": {"capacity_mwh": 20.0, "power_mw": 10.0, "initial_soc_mwh": 2.0},

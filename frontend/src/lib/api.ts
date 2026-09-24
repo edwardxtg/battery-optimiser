@@ -51,7 +51,9 @@ async function fetchElexonDirect(): Promise<PriceSeries> {
   if (!res.ok) throw new Error(`Elexon HTTP ${res.status}`);
   const json = await res.json();
   const rows: any[] = json.data ?? [];
+  // Zero-volume periods come back with price 0: that's missing data, not £0, so drop them.
   const parsed = rows
+    .filter((r) => r.volume !== 0)
     .map((r) => ({ t: r.startTime ?? r.start, p: r.price }))
     .filter((r) => r.t != null && r.p != null)
     .sort((a, b) => (a.t < b.t ? -1 : 1));
