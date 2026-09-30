@@ -4,12 +4,15 @@
 -- industry convention is, and only for days with all 48 half-hours present.
 
 WITH complete_days AS (
-    -- Days with all 48 half-hours. Excludes days with missing (zero-volume) periods and
-    -- clock-change days (46 or 50 periods).
+    -- Normal 24-hour UK days with all 48 half-hours. Excludes days with missing
+    -- (zero-volume) periods and clock-change days (46 or 50 periods) - including a 50-period
+    -- autumn day that happens to be missing two periods and so has 48 rows.
     SELECT settlement_date
     FROM prices
     GROUP BY settlement_date
     HAVING count(*) = 48
+       AND date_diff('minute', timezone('Europe/London', settlement_date::TIMESTAMP),
+                     timezone('Europe/London', (settlement_date + 1)::TIMESTAMP)) = 1440
 ),
 hourly AS (
     SELECT settlement_date,

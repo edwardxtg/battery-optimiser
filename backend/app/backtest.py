@@ -24,6 +24,9 @@ def complete_days(con) -> pd.DataFrame:
         FROM prices
         GROUP BY settlement_date
         HAVING count(*) = 48
+           -- a normal 24-hour UK day, so a 50-period autumn day short by two isn't counted
+           AND date_diff('minute', timezone('Europe/London', settlement_date::TIMESTAMP),
+                     timezone('Europe/London', (settlement_date + 1)::TIMESTAMP)) = 1440
         ORDER BY settlement_date
     """).df()
 

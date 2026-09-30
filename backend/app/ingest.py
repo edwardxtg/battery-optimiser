@@ -49,6 +49,9 @@ def parse_window(rows: list[dict]) -> pd.DataFrame:
     # row, matching the live-demo parsers.
     volume = pd.to_numeric(df["volume"], errors="coerce")
     df = df[volume != 0].drop(columns="volume")
+    # A row without a price, timestamp or period can't be stored meaningfully; the other
+    # parsers skip them too.
+    df = df.dropna(subset=["price", "startTime", "settlementPeriod"])
     df = df.rename(columns={
         "settlementDate": "settlement_date", "settlementPeriod": "settlement_period",
         "startTime": "ts",

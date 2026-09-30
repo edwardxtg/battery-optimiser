@@ -49,3 +49,10 @@ def test_replace_window_removes_stale_zero_price_rows():
     rows = con.execute("SELECT settlement_period, price FROM prices ORDER BY 1").fetchall()
     assert rows == [(1, 80.0)]
     assert con.execute("SELECT min(settlement_date) FROM prices").fetchone()[0] == date(2026, 1, 1)
+
+
+def test_parse_window_drops_rows_without_a_price():
+    row = elexon_row(2, 60.0, 100.0)
+    row["price"] = None
+    df = parse_window([elexon_row(1, 80.0, 500.0), row])
+    assert list(df["settlement_period"]) == [1]

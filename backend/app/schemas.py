@@ -1,10 +1,14 @@
 """Pydantic request/response models for the API."""
 from __future__ import annotations
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class BatterySpec(BaseModel):
+    # Reject unknown fields: a client built for an older API (e.g. kW field names) gets a
+    # clear 422 instead of results for a default battery it never asked for.
+    model_config = ConfigDict(extra="forbid")
+
     capacity_mwh: float = Field(20.0, gt=0, description="Usable energy capacity")
     power_mw: float = Field(10.0, gt=0, description="Max charge/discharge power")
     efficiency: float = Field(0.88, gt=0, le=1, description="Round-trip efficiency")

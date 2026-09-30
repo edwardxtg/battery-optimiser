@@ -87,3 +87,15 @@ def test_backtest_clears_stale_runs(con):
     run_backtest(con, b)
     days = [d for (d,) in con.execute("SELECT settlement_date FROM runs ORDER BY 1").fetchall()]
     assert days == [date(2026, 1, 1)]
+
+
+def test_autumn_clock_change_day_short_by_two_is_not_complete():
+    # 27 Oct 2024 has 50 periods. With two missing it has 48 rows - the same count as a
+    # normal complete day - but it must still be excluded from spreads and the backtest.
+    from app.backtest import complete_days
+
+    con = connect(":memory:")
+    df = day_rows(date(2024, 10, 27), [50.0] * 48)
+    con.execute("INSERT INTO prices SELECT * FROM df")
+    assert query(con, "tbx").empty
+    assert complete_days(con).empty

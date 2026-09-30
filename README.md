@@ -37,7 +37,7 @@ start — the backend is only hit when you optimise.
 
 ## The optimisation
 
-A linear program (linopy + HiGHS) over the 48 half-hourly periods of a day. It maximises
+A linear program (linopy + HiGHS) over a rolling day of half-hourly periods (~48). It maximises
 **arbitrage profit** — export revenue minus import cost — net of a per-MWh **cycle cost**,
 subject to power, capacity, round-trip efficiency, a **state-of-charge floor**, and a
 **no-net-drain** condition. It reports **cycles** (energy discharged ÷ capacity) and

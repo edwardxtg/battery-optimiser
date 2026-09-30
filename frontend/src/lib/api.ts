@@ -95,5 +95,9 @@ export async function optimise(
     body: JSON.stringify({ battery, prices }),
   });
   if (!res.ok) throw new Error(`Optimise HTTP ${res.status}`);
-  return res.json();
+  const json = await res.json();
+  if (!Array.isArray(json.charge_mw) || typeof json.gbp_per_mw_year !== "number") {
+    throw new Error("unexpected response from the backend (is it the same version as the site?)");
+  }
+  return json;
 }

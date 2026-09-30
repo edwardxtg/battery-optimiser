@@ -58,3 +58,12 @@ def test_floor_above_soc_rejected():
                         "initial_soc_mwh": 2.0, "soc_min_mwh": 5.0}}
     r = client.post("/optimise", json=body)
     assert r.status_code == 422
+
+
+def test_old_kw_field_names_rejected():
+    # A client built for the pre-MW API must get a clean 422, not results for a default
+    # battery it never asked for.
+    body = {"battery": {"capacity_kwh": 13.5, "power_kw": 5.0, "initial_soc_kwh": 2.0},
+            "prices": [50.0] * 48}
+    r = client.post("/optimise", json=body)
+    assert r.status_code == 422

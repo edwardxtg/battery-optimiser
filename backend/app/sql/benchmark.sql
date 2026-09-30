@@ -2,18 +2,22 @@
 --
 -- For a battery of duration D hours cycling once a day, the most it can earn per MW is
 -- roughly TB_D: the sum of the D dearest hours minus the D cheapest. So we compare the
--- optimiser's realised £/MW/day with TB_D and call the ratio the capture rate. It can't
--- reach 100%: TB_D ignores round-trip losses and the cycle cost.
+-- optimiser's realised £/MW/day with TB_D and call the ratio the capture rate. TB_D ignores
+-- round-trip losses and cycle cost, which pull capture down, but it also assumes one cycle
+-- on hourly averages, so on double-peak days the optimiser can capture more than 100%.
 --
 -- Parameters: $power_mw, $capacity_mwh, $efficiency select the battery; $hours = D.
 
 WITH complete_days AS (
-    -- Days with all 48 half-hours. Excludes days with missing (zero-volume) periods and
-    -- clock-change days (46 or 50 periods).
+    -- Normal 24-hour UK days with all 48 half-hours. Excludes days with missing
+    -- (zero-volume) periods and clock-change days (46 or 50 periods) - including a 50-period
+    -- autumn day that happens to be missing two periods and so has 48 rows.
     SELECT settlement_date
     FROM prices
     GROUP BY settlement_date
     HAVING count(*) = 48
+       AND date_diff('minute', timezone('Europe/London', settlement_date::TIMESTAMP),
+                     timezone('Europe/London', (settlement_date + 1)::TIMESTAMP)) = 1440
 ),
 hourly AS (
     SELECT settlement_date,
