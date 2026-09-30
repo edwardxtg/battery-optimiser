@@ -48,9 +48,9 @@ reasoning behind each constraint, is in **[backend/MODEL.md](backend/MODEL.md)**
 upper-bound benchmark: the forecaster is a future upstream component, and because the
 optimiser takes prices as an input, it won't change when the forecast is added.
 
-Wholesale arbitrage is only part of a GB battery's revenue — ancillary services are the
-rest — so the £/MW/year shown here is a floor on the stack and a ceiling on the wholesale
-layer, not a forecast of what an asset earns.
+Because of perfect foresight, the £/MW/year shown here is an **upper bound on wholesale-only
+revenue**, not a forecast of what an asset earns: a real battery doesn't know tomorrow's
+prices, and it also earns from ancillary services, which this model leaves out.
 
 ## Backtest & benchmark
 
@@ -82,9 +82,13 @@ Result for the default 10 MW / 20 MWh, 88 % RTE battery over 24 Aug – 23 Sep 2
 | Metric | Value |
 |---|---|
 | Mean TB2 available | £223 /MW/day |
-| Mean realised (perfect foresight) | £182 /MW/day ≈ **£66k /MW/yr** |
+| Mean realised (perfect foresight) | £182 /MW/day (≈ £66k /MW/yr if every day were like these) |
 | **Capture rate vs TB2** | **75 %** |
 | Cycles per day | 1.48 |
+
+The annualised figure is one month scaled up to a year, not a yearly estimate: spreads vary a
+lot by season, and late summer 2026 was a wide-spread month. Over a full year (Oct 2024 – Sep
+2025) the same kind of perfect-foresight optimisation earns roughly £41k/MW/yr.
 
 Two things the day-by-day table makes visible:
 
