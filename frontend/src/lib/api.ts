@@ -11,12 +11,12 @@ const ELEXON_URL =
   "https://data.elexon.co.uk/bmrs/api/v1/balancing/pricing/market-index";
 
 export interface BatterySpec {
-  capacity_kwh: number;
-  power_kw: number;
+  capacity_mwh: number;
+  power_mw: number;
   efficiency: number;
-  initial_soc_kwh: number;
-  reserve_kwh: number;
-  degradation_cost_per_kwh: number;
+  initial_soc_mwh: number;
+  soc_min_mwh: number;
+  cycle_cost_per_mwh: number;
 }
 
 export interface PriceSeries {
@@ -27,12 +27,13 @@ export interface PriceSeries {
 
 export interface OptimiseResult {
   source: string;
-  charge_kw: number[];
-  discharge_kw: number[];
-  soc_kwh: number[];
+  charge_mw: number[];
+  discharge_mw: number[];
+  soc_mwh: number[];
   prices: number[];
   net_profit: number;
-  projected_monthly: number;
+  cycles: number;
+  gbp_per_mw_year: number;
 }
 
 function isoHour(d: Date): string {
@@ -50,7 +51,9 @@ async function fetchElexonDirect(): Promise<PriceSeries> {
   if (!res.ok) throw new Error(`Elexon HTTP ${res.status}`);
   const json = await res.json();
   const rows: any[] = json.data ?? [];
+  // Zero-volume periods come back with price 0: that's missing data, not £0, so drop them.
   const parsed = rows
+    .filter((r) => r.volume !== 0)
     .map((r) => ({ t: r.startTime ?? r.start, p: r.price }))
     .filter((r) => r.t != null && r.p != null)
     .sort((a, b) => (a.t < b.t ? -1 : 1));
@@ -92,5 +95,9 @@ export async function optimise(
     body: JSON.stringify({ battery, prices }),
   });
   if (!res.ok) throw new Error(`Optimise HTTP ${res.status}`);
-  return res.json();
+  const json = await res.json();
+  if (!Array.isArray(json.charge_mw) || typeof json.gbp_per_mw_year !== "number") {
+    throw new Error("unexpected response from the backend (is it the same version as the site?)");
+  }
+  return json;
 }

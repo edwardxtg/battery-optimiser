@@ -2,16 +2,17 @@
 
 **Live demo: [battery-optimiser.vercel.app](https://battery-optimiser.vercel.app/)**
 
-Optimise a home battery to **arbitrage wholesale electricity prices** — buy when power is
-cheap, sell when it's dear — within the battery's physical limits. Enter your battery,
-press Optimise, and see the dispatch schedule and projected earnings against live GB prices.
+Optimise a grid-scale battery (BESS) to **arbitrage wholesale electricity prices** — buy
+when power is cheap, sell when it's dear — within the battery's physical limits. Enter a
+battery, press Optimise, and see the dispatch schedule, cycles and £/MW/year against live
+GB prices.
 
-Grid-service revenue — an aggregator (a virtual power plant) paying the battery to export
-during grid-stress events — is one layer that could sit *on top* of this arbitrage base
-(see [Possible extensions](#possible-extensions)).
+This is the wholesale-energy core of a **BESS revenue model**. A full model stacks
+ancillary services, cycling limits and degradation on top of it — see
+[How this relates to a full BESS revenue model](#how-this-relates-to-a-full-bess-revenue-model).
 
-> A deliberately simple, public-data demonstration of the optimise → serve loop behind a
-> demand-side flexibility platform.
+> A deliberately simple, public-data demonstration of the model → API → UI loop behind a
+> battery revenue product.
 
 ## Architecture
 
@@ -28,35 +29,91 @@ Data flow:
 1. The **frontend** fetches live GB prices directly in the browser on page load
    (Elexon BMRS), falling back to a backend proxy if CORS blocks the direct call.
 2. On **Optimise**, it POSTs the battery spec + prices to the backend.
-3. The **backend** derives grid-stress events, solves the dispatch LP, and returns the
-   schedule + earnings breakdown.
-4. The frontend renders price/charging, state-of-charge, and the earnings.
+3. The **backend** solves the dispatch LP and returns the schedule, cycles and revenue.
+4. The frontend renders price/dispatch, state-of-charge, and the revenue metrics.
 
 Keeping data-fetching in the browser means page load never waits on a Cloud Run cold
 start — the backend is only hit when you optimise.
 
 ## The optimisation
 
-A linear program (linopy + HiGHS) over the 48 half-hourly periods of a day. It maximises
-**arbitrage profit** — export revenue minus import cost — net of a small per-kWh
-**degradation cost**, subject to power, capacity, round-trip efficiency, a homeowner
-**reserve floor**, and a **no-net-drain** condition. The full formulation, with the reasoning
-behind each constraint, is in **[backend/MODEL.md](backend/MODEL.md)**.
+A linear program (linopy + HiGHS) over a rolling day of half-hourly periods (~48). It maximises
+**arbitrage profit** — export revenue minus import cost — net of a per-MWh **cycle cost**,
+subject to power, capacity, round-trip efficiency, a **state-of-charge floor**, and a
+**no-net-drain** condition. It reports **cycles** (energy discharged ÷ capacity) and
+**£/MW/year**, the units BESS revenues are quoted in. The full formulation, with the
+reasoning behind each constraint, is in **[backend/MODEL.md](backend/MODEL.md)**.
 
 **v1 assumes perfect foresight** (prices are treated as known). That's a deliberate
 upper-bound benchmark: the forecaster is a future upstream component, and because the
 optimiser takes prices as an input, it won't change when the forecast is added.
 
-Wholesale arbitrage alone is marginal — GB spreads are tens of £/MWh — so a home battery
-earns little from it. That's exactly why grid services and VPPs exist, and why they'd be a
-natural extension rather than the starting point.
+Because of perfect foresight, the £/MW/year shown here is an **upper bound on wholesale-only
+revenue**, not a forecast of what an asset earns: a real battery doesn't know tomorrow's
+prices, and it also earns from ancillary services, which this model leaves out.
+
+## Backtest & benchmark
+
+The optimiser is only worth anything if it can be measured, so the backend also carries a
+small **price store and backtest**:
+
+```bash
+make ingest      # pull 30 days of Elexon prices into backend/prices.duckdb
+make backtest    # solve every stored day, benchmark against the available spread
+```
+
+- **`app/ingest.py`** walks Elexon's market-index endpoint back in 7-day windows (its
+  per-request limit) and stores half-hourly prices in a single-file
+  [DuckDB](https://duckdb.org) store, keyed by settlement date + period. Each window
+  replaces what's stored for that time range, so re-running is safe. Periods with **zero
+  traded volume** — which Elexon reports as a price of £0 — are treated as missing, and days
+  with any missing half-hour are left out of the spreads and the backtest.
+- **`app/sql/tbx.sql`** computes **TB1 / TB2 / TB4** per day — the sum of the X dearest
+  hours minus the X cheapest, on hourly-average prices. TB2 is the standard proxy for what
+  a 2-hour battery can earn per MW from one cycle a day.
+- **`app/backtest.py`** runs the LP on each complete day (perfect foresight, state of
+  charge reset daily) and writes revenue, throughput and cycles to a `runs` table.
+- **`app/sql/benchmark.sql`** joins the two and reports the **capture rate**:
+  realised £/MW/day ÷ TB<sub>D</sub> for a D-hour battery.
+
+Result for the default 10 MW / 20 MWh, 88 % RTE battery over 24 Aug – 23 Sep 2026
+(29 complete days; 11 and 12 Sep excluded for zero-volume periods):
+
+| Metric | Value |
+|---|---|
+| Mean TB2 available | £223 /MW/day |
+| Mean realised (perfect foresight) | £182 /MW/day (≈ £66k /MW/yr if every day were like these) |
+| **Capture rate vs TB2** | **75 %** |
+| Cycles per day | 1.48 |
+
+The annualised figure is one month scaled up to a year, not a yearly estimate: spreads vary a
+lot by season, and late summer 2026 was a wide-spread month. Over a full year (Oct 2024 – Sep
+2025) the same kind of perfect-foresight optimisation earns roughly £41k/MW/yr.
+
+Two things the day-by-day table makes visible:
+
+- **Capture rate falls on flat, expensive days.** On 28 Aug prices sat between £97 and
+  £169; buying at ~£132 and selling at ~£166 nets only ~£16/MWh after the 12 % round-trip
+  loss, because efficiency costs a share of the *price level*, not of the spread. TB2
+  ignores losses, so capture drops to 23 %.
+- **Capture rate can exceed 100 % on double-peak days.** TB2 assumes one cycle; the
+  optimiser is free to cycle more, and on 1 Sep it did 2 full cycles for 101 % of TB2. A
+  daily cycle cap would make the comparison exact and is the obvious next constraint.
+
+An earlier version of this table reported 135 % capture on 12 Sep. That was a data bug,
+not a strategy: four untraded periods across 11–12 Sep, reported as £0, let the optimiser
+"buy" free power.
+The fix, and tests for it, are in the ingest and SQL above.
+
+The SQL is deliberately plain — CTEs, window functions and a join — and lives in `.sql`
+files rather than being built in Python, so each query can be read and run on its own.
 
 ## Run locally
 
 ```bash
 # Backend (:8080)
 make backend-install
-make backend-test        # unit tests for the optimiser + API
+make backend-test        # unit tests for the optimiser, API and SQL store
 make backend-dev
 
 # Frontend (:3000) — in another terminal
@@ -103,17 +160,31 @@ In place:
 
 A determined caller can still hit the endpoint directly; that's expected and harmless here.
 
+## How this relates to a full BESS revenue model
+
+What's here is the wholesale-energy layer, kept small on purpose so every line is
+explainable. The layers a production revenue model adds, and how each would slot in:
+
+| Layer | Status here | How it would slot in |
+|---|---|---|
+| Wholesale arbitrage | ✅ | The LP in `optimise.py` |
+| Cycle cost (degradation as £/MWh) | ✅ | Objective term |
+| SoC floor / footroom | ✅ | Bound on `soc` |
+| Cycles and £/MW/year reporting | ✅ | `DispatchResult` |
+| Backtest and capture rate vs TBX spreads | ✅ | `backtest.py` + `sql/` |
+| Daily cycling cap | ✗ | One constraint: `Σ discharge·Δt ≤ N·C` |
+| Ancillary services (frequency response, reserve) | ✗ | Per-service commitment variables, headroom/footroom on `soc`, revenue term — co-optimised in the same LP |
+| Imperfect foresight | ✗ | Re-solve each hour with true near-term prices and a smoothed view beyond; compare with perfect foresight to get a capture rate |
+| Degradation over time | ✗ | Reduce capacity as cumulative cycles accrue |
+| Annual cycling budget | ✗ | Post-process: drop the least profitable sub-cycles until under budget |
+| Multi-day state of charge | ✗ | Carry `soc[-1]` into the next day's `initial_soc` |
+
 ## Possible extensions
 
-Directions this could be taken — illustrative, not commitments:
-
-- **Grid-service revenue (the VPP layer).** Payment for exporting during grid-stress events
-  on top of the arbitrage base — the layer where an aggregator / VPP adds value.
 - **Price forecasting.** Replace perfect foresight with a forecaster (statistical/ML, or a
-  PyPSA fundamentals model); the price input is designed to be swapped.
+  fundamentals model); the price input is designed to be swapped.
 - **Receding-horizon re-optimisation** each settlement period, as a live dispatcher runs.
-- **Fleet endpoint** aggregating many batteries into total dispatchable MW (the VPP view).
-- **Household load** so the battery also optimises self-consumption, not just grid trades.
+- **Other markets.** The LP is market-agnostic; only the price feed is GB-specific.
 
 ## Licence
 

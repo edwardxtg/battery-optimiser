@@ -78,21 +78,22 @@ def optimise(request: Request, req: OptimiseRequest) -> OptimiseResponse:
 
     b = req.battery
     battery = Battery(
-        capacity_kwh=b.capacity_kwh,
-        power_kw=b.power_kw,
+        capacity_mwh=b.capacity_mwh,
+        power_mw=b.power_mw,
         efficiency=b.efficiency,
-        initial_soc_kwh=min(b.initial_soc_kwh, b.capacity_kwh),
-        reserve_kwh=min(b.reserve_kwh, b.capacity_kwh),
-        degradation_cost_per_kwh=b.degradation_cost_per_kwh,
+        initial_soc_mwh=min(b.initial_soc_mwh, b.capacity_mwh),
+        soc_min_mwh=min(b.soc_min_mwh, b.capacity_mwh),
+        cycle_cost_per_mwh=b.cycle_cost_per_mwh,
     )
     r = optimise_dispatch(battery, prices_arr)
 
     return OptimiseResponse(
         source=source,
-        charge_kw=r.charge_kw.tolist(),
-        discharge_kw=r.discharge_kw.tolist(),
-        soc_kwh=r.soc_kwh.tolist(),
+        charge_mw=r.charge_mw.tolist(),
+        discharge_mw=r.discharge_mw.tolist(),
+        soc_mwh=r.soc_mwh.tolist(),
         prices=r.prices.tolist(),
         net_profit=r.net_profit,
-        projected_monthly=r.projected_monthly,
+        cycles=r.cycles,
+        gbp_per_mw_year=r.gbp_per_mw_year,
     )

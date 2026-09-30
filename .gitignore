@@ -19,3 +19,7 @@ next-env.d.ts
 
 # OS
 .DS_Store
+
+# DuckDB price store (rebuilt by `python -m app.ingest`)
+*.duckdb
+*.duckdb.wal

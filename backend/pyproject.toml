@@ -1,7 +1,7 @@
 [project]
 name = "battery-optimiser-backend"
 version = "0.1.0"
-description = "Stacked battery dispatch optimiser (arbitrage + grid-event export)"
+description = "Grid-scale battery (BESS) wholesale arbitrage dispatch optimiser"
 requires-python = ">=3.10"
 dependencies = [
     "numpy>=1.26",
@@ -13,6 +13,7 @@ dependencies = [
     "pydantic>=2.6",
     "requests>=2.31",
     "slowapi>=0.1.9",
+    "duckdb>=1.0",
 ]
 
 [build-system]
